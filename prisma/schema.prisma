@@ -1,0 +1,170 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  ADMIN
+  RESCUE_LEADER
+  RESCUE_MEMBER
+  CITIZEN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
+
+enum TeamStatus {
+  AVAILABLE
+  BUSY
+  OFFLINE
+}
+
+enum RescueRequestStatus {
+  PENDING
+  ASSIGNED
+  ACCEPTED
+  MOVING
+  NEAR_VICTIM
+  ARRIVED_CONFIRMED
+  RESCUING
+  RESCUED
+  TRANSFERRED_SAFEZONE
+  UNREACHABLE
+  NEED_SUPPORT
+  CANCELLED
+}
+
+enum AlertLevel {
+  LOW
+  MEDIUM
+  HIGH
+  EMERGENCY
+}
+
+enum AlertStatus {
+  DRAFT
+  PUBLISHED
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+enum SmsStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model User {
+  id           String          @id @default(cuid())
+  fullName     String          @map("full_name")
+  phone        String?         @unique
+  email        String?         @unique
+  passwordHash String          @map("password_hash")
+  role         UserRole        @default(CITIZEN)
+  status       UserStatus      @default(ACTIVE)
+  avatar       String?
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  ledTeams      RescueTeam[]   @relation("TeamLeader")
+  rescueRequests RescueRequest[]
+  smsLogs       SmsLog[]
+
+  @@map("users")
+}
+
+model RescueTeam {
+  id          String          @id @default(cuid())
+  name        String
+  phone       String?
+  leaderId    String?         @map("leader_id")
+  leaderName  String?         @map("leader_name")
+  status      TeamStatus      @default(AVAILABLE)
+  latitude    Float?
+  longitude   Float?
+  memberCount Int             @default(0) @map("member_count")
+  notes       String?
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  leader         User?          @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: SetNull)
+  rescueRequests RescueRequest[]
+
+  @@map("rescue_teams")
+}
+
+model RescueRequest {
+  id               String              @id @default(cuid())
+  fullName         String              @map("full_name")
+  phone            String?
+  addressDetail    String?             @map("address_detail")
+  areaName         String?             @map("area_name")
+  description      String?
+  numberOfPeople   Int                 @default(1) @map("number_of_people")
+  emergencyLevel   AlertLevel          @default(HIGH) @map("emergency_level")
+  latitude         Float?
+  longitude        Float?
+  status           RescueRequestStatus @default(PENDING)
+  assignedTeamId   String?             @map("assigned_team_id")
+  createdByUserId  String?             @map("created_by_user_id")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  acceptedAt       DateTime?           @map("accepted_at")
+  completedAt      DateTime?           @map("completed_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  assignedTeam RescueTeam? @relation(fields: [assignedTeamId], references: [id], onDelete: SetNull)
+  createdBy    User?       @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([assignedTeamId])
+  @@map("rescue_requests")
+}
+
+model FloodAlert {
+  id        String      @id @default(cuid())
+  title     String
+  content   String
+  level     AlertLevel  @default(MEDIUM)
+  status    AlertStatus @default(DRAFT)
+  areaName  String?     @map("area_name")
+  startTime DateTime?   @map("start_time")
+  endTime   DateTime?   @map("end_time")
+  smsSent   Boolean     @default(false) @map("sms_sent")
+  smsCount  Int         @default(0) @map("sms_count")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  smsLogs SmsLog[]
+
+  @@index([status])
+  @@index([level])
+  @@map("flood_alerts")
+}
+
+model SmsLog {
+  id          String    @id @default(cuid())
+  recipient  String
+  phone      String
+  message    String
+  status     SmsStatus @default(PENDING)
+  provider   String?
+  error      String?
+  sentAt     DateTime? @map("sent_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  userId     String?   @map("user_id")
+  floodAlertId String? @map("flood_alert_id")
+
+  user       User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  floodAlert FloodAlert? @relation(fields: [floodAlertId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([phone])
+  @@map("sms_logs")
+}
