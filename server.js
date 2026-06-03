@@ -29,6 +29,15 @@ const allowedOrigins = (process.env.CLIENT_ORIGINS || '')
   .split(',')
   .map(origin => origin.trim())
   .filter(Boolean);
+const defaultAllowedOrigins = [
+  'https://cuuhohatinh.onrender.com',
+  'https://cuuhohatinh.sonminh2709.workers.dev',
+  'http://localhost:5173',
+  'http://localhost:5000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:5000',
+];
+const corsAllowedOrigins = new Set([...defaultAllowedOrigins, ...allowedOrigins]);
 const { Pool } = pg;
 const pool = DATABASE_URL
   ? new Pool({
@@ -43,10 +52,12 @@ app.set('trust proxy', 1);
 
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+    if (!origin || corsAllowedOrigins.has(origin)) {
       return callback(null, true);
     }
-    return callback(new Error(`Origin ${origin} is not allowed by CORS`));
+
+    console.warn(`CORS blocked origin: ${origin}`);
+    return callback(null, false);
   },
 }));
 app.use(express.json({ limit: '1mb' }));
