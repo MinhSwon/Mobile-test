@@ -577,6 +577,14 @@ app.put('/api/notifications/:id/read', (req, res) => {
 
 // Serve the production React build from the same domain as the API.
 if (fs.existsSync(DIST_DIR)) {
+  app.use('/static-assets', express.static(path.join(DIST_DIR, 'static-assets'), {
+    index: false,
+    maxAge: 0,
+    setHeaders(res) {
+      res.setHeader('Cache-Control', 'no-store');
+    },
+  }));
+
   app.use('/assets', express.static(path.join(DIST_DIR, 'assets'), {
     index: false,
     maxAge: 0,
@@ -597,6 +605,10 @@ if (fs.existsSync(DIST_DIR)) {
 
   app.use('/assets', (req, res) => {
     res.status(404).type('text/plain').send('Asset not found');
+  });
+
+  app.use('/static-assets', (req, res) => {
+    res.status(404).type('text/plain').send('Static asset not found');
   });
 
   app.get('*', (req, res) => {

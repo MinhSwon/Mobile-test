@@ -14,6 +14,13 @@ export default defineConfig({
   ],
   build: {
     target: 'es2017',
+    rollupOptions: {
+      output: {
+        assetFileNames: 'static-assets/[name]-[hash][extname]',
+        chunkFileNames: 'static-assets/[name]-[hash].js',
+        entryFileNames: 'static-assets/[name]-[hash].js',
+      },
+    },
   },
   server: {
     watch: {
