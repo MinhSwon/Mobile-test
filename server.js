@@ -199,6 +199,57 @@ app.get('/api/db', (req, res) => {
 
 // 2. AUTH LOGIN
 app.post('/api/auth/login', (req, res) => {
+  try {
+    const normalize = value => (typeof value === 'string' ? value.trim() : '');
+    const { emailOrPhone, password } = req.body || {};
+    const credential = normalize(emailOrPhone).toLowerCase();
+    const plainPassword = normalize(password);
+
+    if (!credential || !plainPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vui long nhap email/so dien thoai va mat khau'
+      });
+    }
+
+    const users = Array.isArray(db.users) ? db.users : [];
+    if (users.length === 0) {
+      console.error('Login failed: users collection is empty or invalid');
+      return res.status(503).json({
+        success: false,
+        message: 'Du lieu nguoi dung chua san sang, vui long thu lai'
+      });
+    }
+
+    const user = users.find(u => {
+      const email = normalize(u?.email).toLowerCase();
+      const phone = normalize(u?.phone);
+      const passwordHash = normalize(u?.password_hash);
+      return (email === credential || phone === credential) && passwordHash === plainPassword;
+    });
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Sai tai khoan hoac mat khau'
+      });
+    }
+
+    const profiles = Array.isArray(db.citizenProfiles) ? db.citizenProfiles : [];
+    const profile = profiles.find(p => p.user_id === user.id);
+    const { password_hash, ...safeUser } = user;
+
+    return res.json({ success: true, user: safeUser, profile: profile || null });
+  } catch (err) {
+    console.error('Login route failed:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'May chu dang loi dang nhap, vui long thu lai'
+    });
+  }
+});
+
+app.post('/api/auth/login-legacy', (req, res) => {
   const { emailOrPhone, password } = req.body;
   const user = db.users.find(
     u => (u.email === emailOrPhone || u.phone === emailOrPhone) && u.password_hash === password
