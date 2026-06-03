@@ -5,13 +5,6 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>duancuuho</title>
-  </head>
-  <body>
-    <div id="root">
-      <div style="font-family: Arial, sans-serif; padding: 32px; color: #0f172a;">
-        Đang tải ứng dụng...
-      </div>
-    </div>
     <script>
       window.__showStartupError = function (message) {
         var root = document.getElementById('root');
@@ -28,13 +21,22 @@
         var reason = event.reason;
         window.__showStartupError(reason && reason.message ? reason.message : reason);
       });
-      setTimeout(function () {
-        var root = document.getElementById('root');
-        if (root && root.textContent.indexOf('Đang tải ứng dụng') !== -1) {
-          window.__showStartupError('JavaScript bundle không chạy. Hãy kiểm tra file /assets/*.js trong Network tab hoặc console lỗi trình duyệt.');
-        }
-      }, 5000);
+      window.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+          var root = document.getElementById('root');
+          if (root && root.textContent.indexOf('Đang tải ứng dụng') !== -1) {
+            window.__showStartupError('JavaScript bundle không chạy. Hãy cập nhật trình duyệt hoặc kiểm tra Console/Network xem file /assets/*.js có bị chặn không.');
+          }
+        }, 5000);
+      });
     </script>
+  </head>
+  <body>
+    <div id="root">
+      <div style="font-family: Arial, sans-serif; padding: 32px; color: #0f172a;">
+        Đang tải ứng dụng...
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
