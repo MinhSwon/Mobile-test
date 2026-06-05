@@ -47,10 +47,16 @@ const STATUS_COLORS = {
   NEED_SUPPORT: '#f97316', CANCELLED: '#6b7280',
 };
 
+const DEFAULT_MAP_CENTER = [18.183, 105.733];
+const isValidCoordinate = value => typeof value === 'number' && Number.isFinite(value);
+const hasLatLng = (lat, lng) => isValidCoordinate(lat) && isValidCoordinate(lng);
+const missionHasVictimLocation = mission => hasLatLng(mission?.victim_latitude, mission?.victim_longitude);
+const missionHasRescuerLocation = mission => hasLatLng(mission?.current_rescuer_latitude, mission?.current_rescuer_longitude);
+
 function MapUpdater({ center }) {
   const map = useMap();
   useEffect(() => {
-    if (center) map.setView(center, 14);
+    if (hasLatLng(center?.[0], center?.[1])) map.setView(center, 14);
   }, [center, map]);
   return null;
 }
@@ -61,19 +67,28 @@ export default function DispatchCenter() {
   const toast = useToast();
   const [filterStatus, setFilterStatus] = useState('');
   const [selectedMission, setSelectedMission] = useState(null);
-  const [mapCenter, setMapCenter] = useState([18.183, 105.733]);
+  const [mapCenter, setMapCenter] = useState(DEFAULT_MAP_CENTER);
   const [showFilter, setShowFilter] = useState(false);
 
   const activeMissions = rescueMissions.filter(m => !['RESCUED', 'TRANSFERRED_SAFEZONE', 'CANCELLED'].includes(m.status));
   const displayMissions = filterStatus ? rescueMissions.filter(m => m.status === filterStatus) : rescueMissions;
+  const safeZonesWithLocation = safeZones.filter(sz => hasLatLng(sz.latitude, sz.longitude));
+  const missionsWithVictimLocation = rescueMissions.filter(missionHasVictimLocation);
 
   const handleSelectMission = (mission) => {
     setSelectedMission(mission);
-    setMapCenter([mission.victim_latitude, mission.victim_longitude]);
+    if (missionHasVictimLocation(mission)) {
+      setMapCenter([mission.victim_latitude, mission.victim_longitude]);
+    }
   };
 
   // Simulate GPS update for a mission
   const simulateGPSUpdate = (mission) => {
+    if (!missionHasVictimLocation(mission)) {
+      toast.error('Nhiệm vụ này chưa có tọa độ nạn nhân để mô phỏng GPS');
+      return;
+    }
+
     const newLat = mission.victim_latitude + (Math.random() - 0.5) * 0.001;
     const newLon = mission.victim_longitude + (Math.random() - 0.5) * 0.001;
     const distance = haversineDistance(newLat, newLon, mission.victim_latitude, mission.victim_longitude);
@@ -173,7 +188,7 @@ export default function DispatchCenter() {
           {/* Mission cards */}
           {displayMissions.map(m => {
             const isSelected = selectedMission?.id === m.id;
-            const distance = m.current_rescuer_latitude && m.current_rescuer_longitude
+            const distance = missionHasVictimLocation(m) && missionHasRescuerLocation(m)
               ? haversineDistance(m.current_rescuer_latitude, m.current_rescuer_longitude, m.victim_latitude, m.victim_longitude)
               : null;
 
@@ -213,7 +228,7 @@ export default function DispatchCenter() {
                   )}
                 </div>
 
-                {m.status === 'MOVING' && (
+                {m.status === 'MOVING' && missionHasVictimLocation(m) && (
                   <button
                     className="btn btn-secondary btn-sm"
                     style={{ marginTop: '0.5rem', width: '100%', justifyContent: 'center', fontSize: '0.7rem' }}
@@ -243,7 +258,7 @@ export default function DispatchCenter() {
             <MapUpdater center={mapCenter} />
 
             {/* Safe zones */}
-            {safeZones.map(sz => (
+            {safeZonesWithLocation.map(sz => (
               <Marker key={sz.id} position={[sz.latitude, sz.longitude]} icon={safeZoneIcon}>
                 <Popup>
                   <div style={{ fontSize: '0.82rem' }}>
@@ -256,7 +271,7 @@ export default function DispatchCenter() {
             ))}
 
             {/* Missions */}
-            {rescueMissions.map(m => (
+            {missionsWithVictimLocation.map(m => (
               <div key={m.id}>
                 {/* Victim */}
                 <Marker position={[m.victim_latitude, m.victim_longitude]} icon={victimIcon}>
@@ -275,7 +290,7 @@ export default function DispatchCenter() {
                   pathOptions={{ color: '#f97316', fillColor: '#f97316', fillOpacity: 0.08, weight: 2, dashArray: '5,5' }}
                 />
                 {/* Rescuer */}
-                {m.current_rescuer_latitude && m.current_rescuer_longitude && (
+                {missionHasRescuerLocation(m) && (
                   <>
                     <Marker position={[m.current_rescuer_latitude, m.current_rescuer_longitude]} icon={rescuerIcon}>
                       <Popup>
@@ -335,7 +350,7 @@ export default function DispatchCenter() {
                     ✅ Hệ thống đã xác nhận đến gần ({selectedMission.auto_arrival_distance_meters}m)
                   </div>
                 )}
-                {selectedMission.current_rescuer_latitude && (
+                {missionHasVictimLocation(selectedMission) && missionHasRescuerLocation(selectedMission) && (
                   <div style={{ color: '#3b82f6', fontSize: '0.72rem', marginTop: 4 }}>
                     📏 Khoảng cách hiện tại: {formatDistance(haversineDistance(
                       selectedMission.current_rescuer_latitude,
