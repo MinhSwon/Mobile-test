@@ -8,6 +8,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -27,8 +28,9 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 5000;
 const DATABASE_URL = process.env.DATABASE_URL || '';
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-change-this-secret';
+const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('base64url');
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
+const IS_DEPLOYED_RUNTIME = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
 const DB_FILE = process.env.DB_FILE ? path.resolve(process.env.DB_FILE) : path.join(__dirname, 'db.json');
 const DIST_DIR = path.join(__dirname, 'dist');
 const allowedOrigins = (process.env.CLIENT_ORIGINS || '')
@@ -56,12 +58,12 @@ let writeQueue = Promise.resolve();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
-if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
-  throw new Error('JWT_SECRET is required in production');
+if (IS_DEPLOYED_RUNTIME && !process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET is required in production/Render');
 }
 
 if (!process.env.JWT_SECRET) {
-  console.warn('JWT_SECRET is not set. Using a development-only fallback secret.');
+  console.warn('JWT_SECRET is not set. Using a random development-only runtime secret.');
 }
 
 app.use(helmet({
@@ -235,11 +237,11 @@ function applySeedPasswords() {
   if (!Array.isArray(db.users)) return;
 
   const seedPasswords = {
-    ADMIN: process.env.SEED_ADMIN_PASSWORD || (process.env.NODE_ENV === 'production' ? '' : 'admin123'),
-    SUPER_ADMIN: process.env.SEED_ADMIN_PASSWORD || (process.env.NODE_ENV === 'production' ? '' : 'admin123'),
-    RESCUE_LEADER: process.env.SEED_RESCUE_PASSWORD || (process.env.NODE_ENV === 'production' ? '' : 'rescue123'),
-    RESCUE_MEMBER: process.env.SEED_RESCUE_PASSWORD || (process.env.NODE_ENV === 'production' ? '' : 'rescue123'),
-    CITIZEN: process.env.SEED_CITIZEN_PASSWORD || (process.env.NODE_ENV === 'production' ? '' : 'citizen123'),
+    ADMIN: process.env.SEED_ADMIN_PASSWORD || '',
+    SUPER_ADMIN: process.env.SEED_ADMIN_PASSWORD || '',
+    RESCUE_LEADER: process.env.SEED_RESCUE_PASSWORD || '',
+    RESCUE_MEMBER: process.env.SEED_RESCUE_PASSWORD || '',
+    CITIZEN: process.env.SEED_CITIZEN_PASSWORD || '',
   };
 
   for (const user of db.users) {

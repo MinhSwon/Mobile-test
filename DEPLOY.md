@@ -43,6 +43,11 @@ PORT=5000
 CLIENT_ORIGINS=https://ten-mien-cua-ban.com
 DATABASE_URL=postgresql://user:password@host:5432/flood_rescue
 PGSSL=true
+JWT_SECRET=tao-chuoi-ngau-nhien-dai-it-nhat-32-ky-tu
+JWT_EXPIRES_IN=8h
+SEED_ADMIN_PASSWORD=doi-mat-khau-admin-moi
+SEED_RESCUE_PASSWORD=doi-mat-khau-cuu-ho-moi
+SEED_CITIZEN_PASSWORD=doi-mat-khau-nguoi-dan-moi
 ```
 
 Ghi chu:
@@ -50,8 +55,10 @@ Ghi chu:
 - `PORT` thuong duoc hosting tu gan, khong can dat tren Render.
 - `CLIENT_ORIGINS` co the bo trong neu frontend va API chay cung domain.
 - Khi co `DATABASE_URL`, Prisma se ket noi PostgreSQL va quan ly cac bang quan he.
-- Neu khong co `DATABASE_URL`, backend se fallback ve `db.json`.
+- Tren Render nen luon cau hinh `DATABASE_URL`; `db.json` chi phu hop de chay local va khong duoc commit len Git.
 - `PGSSL=true` thuong can cho database tren hosting. Neu PostgreSQL chay local bang pgAdmin thi de `PGSSL=false`.
+- `JWT_SECRET` bat buoc tren Render/production. Co the tao bang `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`.
+- Cac mat khau seed phai la mat khau moi, khong dung lai mat khau demo da tung co trong lich su Git.
 
 ## Tao database bang pgAdmin
 
@@ -93,7 +100,6 @@ Cau hinh PostgreSQL hien tai phu hop hon `db.json` cho demo/nhom nho 30-50 nguoi
 
 Neu dung that lau dai, nen nang cap tiep:
 
-- Ma hoa mat khau bang bcrypt.
-- Them session/JWT cho dang nhap.
 - Them backup du lieu tu dong.
 - Them monitoring/logging loi.
+- Chuyen token dang nhap sang cookie `HttpOnly` neu can tang muc chong XSS.
