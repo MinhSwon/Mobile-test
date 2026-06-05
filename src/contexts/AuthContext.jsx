@@ -6,17 +6,31 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(() => {
     const saved = localStorage.getItem('currentUser');
-    return saved ? JSON.parse(saved) : null;
+    try {
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      localStorage.removeItem('currentUser');
+      return null;
+    }
   });
   const [currentProfile, setCurrentProfile] = useState(() => {
     const saved = localStorage.getItem('currentProfile');
-    return saved ? JSON.parse(saved) : null;
+    try {
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      localStorage.removeItem('currentProfile');
+      return null;
+    }
   });
 
   const login = useCallback(async (emailOrPhone, password) => {
     try {
       const res = await axios.post('/api/auth/login', { emailOrPhone, password });
       if (res.data.success) {
+        if (res.data.token) {
+          localStorage.setItem('authToken', res.data.token);
+          axios.defaults.headers.common.Authorization = `Bearer ${res.data.token}`;
+        }
         setCurrentUser(res.data.user);
         setCurrentProfile(res.data.profile);
         localStorage.setItem('currentUser', JSON.stringify(res.data.user));
@@ -36,6 +50,8 @@ export function AuthProvider({ children }) {
   const logout = useCallback(() => {
     setCurrentUser(null);
     setCurrentProfile(null);
+    delete axios.defaults.headers.common.Authorization;
+    localStorage.removeItem('authToken');
     localStorage.removeItem('currentUser');
     localStorage.removeItem('currentProfile');
   }, []);

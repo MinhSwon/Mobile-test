@@ -31,7 +31,6 @@ export default function RegisterPage() {
         full_name: form.full_name,
         phone: form.phone,
         email: form.email,
-        password_hash: form.password,
         role: 'CITIZEN',
         status: 'ACTIVE',
         created_at: new Date().toISOString(),

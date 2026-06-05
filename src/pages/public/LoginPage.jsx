@@ -31,9 +31,9 @@ export default function LoginPage() {
   };
 
   const DEMO_ACCOUNTS = [
-    { label: 'Admin / Điều phối viên', email: 'admin@floodguard.vn', pass: 'admin123', color: '#4a6fa5' },
-    { label: 'Đội cứu hộ', email: 'doicuuho1@floodguard.vn', pass: 'rescue123', color: '#3a6b4a' },
-    { label: 'Người dân', email: 'nguoidan1@gmail.com', pass: 'citizen123', color: '#6b5a45' },
+    { label: 'Admin / Điều phối viên', email: 'admin@floodguard.vn', color: '#4a6fa5' },
+    { label: 'Đội cứu hộ', email: 'doicuuho1@floodguard.vn', color: '#3a6b4a' },
+    { label: 'Người dân', email: 'nguoidan1@gmail.com', color: '#6b5a45' },
   ];
 
   return (
@@ -159,7 +159,7 @@ export default function LoginPage() {
                 <button
                   key={acc.email}
                   type="button"
-                  onClick={() => setForm({ emailOrPhone: acc.email, password: acc.pass })}
+                  onClick={() => setForm(f => ({ ...f, emailOrPhone: acc.email }))}
                   style={{
                     padding: '0.5rem 0.75rem',
                     borderRadius: 7,

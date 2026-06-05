@@ -4,6 +4,10 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -23,6 +27,8 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 5000;
 const DATABASE_URL = process.env.DATABASE_URL || '';
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-change-this-secret';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
 const DB_FILE = process.env.DB_FILE ? path.resolve(process.env.DB_FILE) : path.join(__dirname, 'db.json');
 const DIST_DIR = path.join(__dirname, 'dist');
 const allowedOrigins = (process.env.CLIENT_ORIGINS || '')
@@ -50,6 +56,30 @@ let writeQueue = Promise.resolve();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET is required in production');
+}
+
+if (!process.env.JWT_SECRET) {
+  console.warn('JWT_SECRET is not set. Using a development-only fallback secret.');
+}
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      baseUri: ["'self'"],
+      objectSrc: ["'none'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      connectSrc: ["'self'", ...Array.from(corsAllowedOrigins)],
+      frameAncestors: ["'none'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false,
+}));
 app.use(cors({
   origin(origin, callback) {
     if (!origin || corsAllowedOrigins.has(origin)) {
@@ -61,6 +91,28 @@ app.use(cors({
   },
 }));
 app.use(express.json({ limit: '1mb' }));
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 500,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Qua nhieu lan thu, vui long thu lai sau' },
+});
+const publicWriteLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api', apiLimiter);
 
 // In-memory representation of our JSON database
 let db = {
@@ -82,6 +134,212 @@ let db = {
   notifications: NOTIFICATIONS
 };
 const COLLECTION_NAMES = Object.keys(db);
+const ADMIN_ROLES = ['ADMIN', 'SUPER_ADMIN'];
+const RESCUE_ROLES = ['RESCUE_LEADER', 'RESCUE_MEMBER'];
+const DANGEROUS_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+const WARNING_FIELDS = ['title', 'content', 'level', 'status', 'area_id', 'area_name', 'start_time', 'end_time'];
+const RESCUE_REQUEST_PUBLIC_FIELDS = [
+  'full_name', 'phone', 'area_id', 'area_name', 'address_detail', 'description', 'note',
+  'number_of_people', 'emergency_level', 'latitude', 'longitude', 'has_elderly',
+  'has_children', 'has_disabled', 'has_medical_case', 'sos_mode',
+];
+const RESCUE_REQUEST_UPDATE_FIELDS = [
+  ...RESCUE_REQUEST_PUBLIC_FIELDS, 'status', 'assigned_team_id', 'assigned_team_name',
+  'accepted_at', 'completed_at',
+];
+const TEAM_FIELDS = [
+  'team_name', 'name', 'phone', 'leader_user_id', 'leader_id', 'leader_name',
+  'status', 'latitude', 'longitude', 'member_count', 'memberCount', 'notes', 'area_id', 'area_name',
+];
+const SAFE_ZONE_FIELDS = [
+  'name', 'address', 'area_id', 'area_name', 'capacity', 'current_people', 'latitude',
+  'longitude', 'manager_name', 'manager_phone', 'notes', 'status',
+];
+const ROUTE_FIELDS = [
+  'name', 'from_location', 'to_location', 'area_id', 'area_name', 'distance_km',
+  'estimated_minutes', 'difficulty', 'status', 'notes', 'waypoints',
+];
+const DAMAGE_REPORT_FIELDS = [
+  'reporter_id', 'reporter_name', 'phone', 'area_id', 'area_name', 'address_detail',
+  'damage_type', 'severity', 'description', 'estimated_loss', 'latitude', 'longitude', 'images',
+];
+const VULNERABLE_HOUSEHOLD_FIELDS = [
+  'full_name', 'head_name', 'phone', 'area_id', 'area_name', 'address_detail',
+  'household_size', 'elderly_count', 'children_count', 'disabled_count', 'medical_note',
+  'emergency_contact_name', 'emergency_contact_phone', 'latitude', 'longitude', 'priority_level', 'notes',
+];
+const SMS_LOG_FIELDS = ['recipient', 'phone', 'message', 'status', 'provider', 'error', 'user_id', 'flood_warning_id', 'floodAlertId'];
+
+function sanitizeObject(value) {
+  if (Array.isArray(value)) {
+    return value.map(sanitizeObject);
+  }
+
+  if (!value || typeof value !== 'object') {
+    return typeof value === 'string' ? value.trim().slice(0, 2000) : value;
+  }
+
+  const clean = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (!DANGEROUS_KEYS.has(key)) {
+      clean[key] = sanitizeObject(item);
+    }
+  }
+  return clean;
+}
+
+function pickAllowed(source, allowedKeys) {
+  const cleanSource = sanitizeObject(source || {});
+  return allowedKeys.reduce((result, key) => {
+    if (Object.prototype.hasOwnProperty.call(cleanSource, key)) {
+      result[key] = cleanSource[key];
+    }
+    return result;
+  }, {});
+}
+
+function safeUser(user) {
+  if (!user) return null;
+  const safe = { ...user };
+  delete safe.password_hash;
+  delete safe.passwordHash;
+  return sanitizeObject(safe);
+}
+
+function sanitizeDbForUser(user) {
+  const publicDb = {
+    areas: db.areas,
+    floodWarnings: db.floodWarnings,
+    safeZones: db.safeZones,
+    dams: db.dams,
+  };
+
+  if (!user) {
+    return publicDb;
+  }
+
+  const safeDb = {
+    ...db,
+    users: Array.isArray(db.users) ? db.users.map(safeUser) : [],
+  };
+
+  if (!ADMIN_ROLES.includes(user.role)) {
+    delete safeDb.smsLogs;
+    delete safeDb.activityLogs;
+  }
+
+  return sanitizeObject(safeDb);
+}
+
+function applySeedPasswords() {
+  if (!Array.isArray(db.users)) return;
+
+  const seedPasswords = {
+    ADMIN: process.env.SEED_ADMIN_PASSWORD || (process.env.NODE_ENV === 'production' ? '' : 'admin123'),
+    SUPER_ADMIN: process.env.SEED_ADMIN_PASSWORD || (process.env.NODE_ENV === 'production' ? '' : 'admin123'),
+    RESCUE_LEADER: process.env.SEED_RESCUE_PASSWORD || (process.env.NODE_ENV === 'production' ? '' : 'rescue123'),
+    RESCUE_MEMBER: process.env.SEED_RESCUE_PASSWORD || (process.env.NODE_ENV === 'production' ? '' : 'rescue123'),
+    CITIZEN: process.env.SEED_CITIZEN_PASSWORD || (process.env.NODE_ENV === 'production' ? '' : 'citizen123'),
+  };
+
+  for (const user of db.users) {
+    if (user.password_hash || user.passwordHash) continue;
+
+    const seedPassword = seedPasswords[user.role];
+    if (seedPassword) {
+      user.password_hash = bcrypt.hashSync(seedPassword, 12);
+    } else {
+      user.status = 'BLOCKED';
+      console.warn(`Seed user ${user.id} is blocked because no seed password was configured.`);
+    }
+  }
+}
+
+function hardenLegacyPasswords() {
+  if (!Array.isArray(db.users)) return;
+
+  let changed = false;
+  for (const user of db.users) {
+    const storedPassword = String(user.password_hash || user.passwordHash || '');
+    const isBcryptHash = storedPassword.startsWith('$2a$') || storedPassword.startsWith('$2b$') || storedPassword.startsWith('$2y$');
+    if (storedPassword && !isBcryptHash) {
+      user.password_hash = bcrypt.hashSync(storedPassword, 12);
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    saveDb();
+    console.log('Legacy plaintext passwords were upgraded to bcrypt hashes.');
+  }
+}
+
+function issueToken(user) {
+  return jwt.sign(
+    {
+      sub: user.id,
+      role: user.role,
+      name: user.full_name || user.fullName || '',
+    },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
+}
+
+function findUserById(id) {
+  return (Array.isArray(db.users) ? db.users : []).find(user => user.id === id);
+}
+
+function authenticateOptional(req, res, next) {
+  const authHeader = req.get('authorization') || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+
+  if (!token) return next();
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    const user = findUserById(payload.sub);
+    if (user && user.status !== 'BLOCKED') {
+      req.user = safeUser(user);
+    }
+  } catch {
+    req.authError = true;
+  }
+
+  return next();
+}
+
+function requireAuth(req, res, next) {
+  authenticateOptional(req, res, () => {
+    if (req.user) return next();
+    return res.status(401).json({ error: 'Authentication required' });
+  });
+}
+
+function requireRoles(roles) {
+  return (req, res, next) => {
+    requireAuth(req, res, () => {
+      if (roles.includes(req.user.role)) return next();
+      return res.status(403).json({ error: 'Permission denied' });
+    });
+  };
+}
+
+async function verifyPassword(user, plainPassword) {
+  const storedPassword = String(user?.password_hash || user?.passwordHash || '');
+  if (!storedPassword) return false;
+
+  if (storedPassword.startsWith('$2a$') || storedPassword.startsWith('$2b$') || storedPassword.startsWith('$2y$')) {
+    return bcrypt.compare(plainPassword, storedPassword);
+  }
+
+  const isLegacyMatch = storedPassword === plainPassword;
+  if (isLegacyMatch) {
+    user.password_hash = await bcrypt.hash(plainPassword, 12);
+    saveDb();
+  }
+  return isLegacyMatch;
+}
 
 async function initializePostgres() {
   if (!pool) return false;
@@ -155,6 +413,8 @@ function saveDb() {
   }
 }
 
+applySeedPasswords();
+
 // Initialize database: load from db.json if it exists, otherwise seed it
 const usingPostgres = await initializePostgres();
 
@@ -191,6 +451,8 @@ if (!usingPostgres && fs.existsSync(DB_FILE)) {
   console.log('Database successfully seeded and saved to db.json');
 }
 
+hardenLegacyPasswords();
+
 // ---------------------- API ROUTES ----------------------
 
 app.get('/api/health', (req, res) => {
@@ -204,12 +466,15 @@ app.get('/api/health', (req, res) => {
 });
 
 // 1. GET ALL DATABASE STATE (Sync on page load)
-app.get('/api/db', (req, res) => {
-  res.json(db);
+app.get('/api/db', authenticateOptional, (req, res) => {
+  if (req.authError) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+  res.json(sanitizeDbForUser(req.user));
 });
 
 // 2. AUTH LOGIN
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const normalize = value => (typeof value === 'string' ? value.trim() : '');
     const { emailOrPhone, password } = req.body || {};
@@ -235,11 +500,10 @@ app.post('/api/auth/login', (req, res) => {
     const user = users.find(u => {
       const email = normalize(u?.email).toLowerCase();
       const phone = normalize(u?.phone);
-      const passwordHash = normalize(u?.password_hash);
-      return (email === credential || phone === credential) && passwordHash === plainPassword;
+      return email === credential || phone === credential;
     });
 
-    if (!user) {
+    if (!user || user.status === 'BLOCKED' || !(await verifyPassword(user, plainPassword))) {
       return res.status(401).json({
         success: false,
         message: 'Sai tai khoan hoac mat khau'
@@ -248,9 +512,10 @@ app.post('/api/auth/login', (req, res) => {
 
     const profiles = Array.isArray(db.citizenProfiles) ? db.citizenProfiles : [];
     const profile = profiles.find(p => p.user_id === user.id);
-    const { password_hash, ...safeUser } = user;
+    const userForClient = safeUser(user);
+    const token = issueToken(user);
 
-    return res.json({ success: true, user: safeUser, profile: profile || null });
+    return res.json({ success: true, user: userForClient, profile: profile || null, token });
   } catch (err) {
     console.error('Login route failed:', err);
     return res.status(500).json({
@@ -260,20 +525,12 @@ app.post('/api/auth/login', (req, res) => {
   }
 });
 
-app.post('/api/auth/login-legacy', (req, res) => {
-  const { emailOrPhone, password } = req.body;
-  const user = db.users.find(
-    u => (u.email === emailOrPhone || u.phone === emailOrPhone) && u.password_hash === password
-  );
-  if (!user) {
-    return res.status(401).json({ success: false, message: 'Sai tài khoản hoặc mật khẩu' });
-  }
-  const profile = db.citizenProfiles.find(p => p.user_id === user.id);
-  res.json({ success: true, user, profile: profile || null });
+app.use('/api/auth/login-legacy', (req, res) => {
+  res.status(410).json({ success: false, message: 'Legacy login endpoint has been disabled' });
 });
 
 // 3. SEMANTIC VECTOR SEARCH
-app.get('/api/search', (req, res) => {
+app.get('/api/search', requireRoles([...ADMIN_ROLES, ...RESCUE_ROLES]), (req, res) => {
   const { q, type } = req.query;
   if (!q) {
     return res.status(400).json({ error: 'Query parameter "q" is required' });
@@ -300,8 +557,8 @@ app.get('/api/search', (req, res) => {
 });
 
 // 4. FLOOD WARNINGS CRUD
-app.post('/api/warnings', (req, res) => {
-  const data = req.body;
+app.post('/api/warnings', requireRoles(ADMIN_ROLES), (req, res) => {
+  const data = pickAllowed(req.body, WARNING_FIELDS);
   const textToEmbed = `${data.title || ''} ${data.content || ''} ${data.area_name || ''}`;
   const warning = {
     id: `fw-${Date.now()}`,
@@ -317,12 +574,12 @@ app.post('/api/warnings', (req, res) => {
   res.status(201).json(warning);
 });
 
-app.put('/api/warnings/:id', (req, res) => {
+app.put('/api/warnings/:id', requireRoles(ADMIN_ROLES), (req, res) => {
   const { id } = req.params;
   const idx = db.floodWarnings.findIndex(w => w.id === id);
   if (idx === -1) return res.status(404).json({ error: 'Warning not found' });
 
-  const updatedData = { ...db.floodWarnings[idx], ...req.body, updated_at: new Date().toISOString() };
+  const updatedData = { ...db.floodWarnings[idx], ...pickAllowed(req.body, WARNING_FIELDS), updated_at: new Date().toISOString() };
   const textToEmbed = `${updatedData.title || ''} ${updatedData.content || ''} ${updatedData.area_name || ''}`;
   updatedData.vector_embedding = getEmbedding(textToEmbed);
 
@@ -331,7 +588,7 @@ app.put('/api/warnings/:id', (req, res) => {
   res.json(updatedData);
 });
 
-app.delete('/api/warnings/:id', (req, res) => {
+app.delete('/api/warnings/:id', requireRoles(ADMIN_ROLES), (req, res) => {
   const { id } = req.params;
   db.floodWarnings = db.floodWarnings.filter(w => w.id !== id);
   saveDb();
@@ -339,8 +596,11 @@ app.delete('/api/warnings/:id', (req, res) => {
 });
 
 // 5. RESCUE REQUESTS & MISSIONS
-app.post('/api/rescue-requests', (req, res) => {
-  const data = req.body;
+app.post('/api/rescue-requests', publicWriteLimiter, authenticateOptional, (req, res) => {
+  const data = pickAllowed(req.body, RESCUE_REQUEST_PUBLIC_FIELDS);
+  if (req.user) {
+    data.user_id = req.user.id;
+  }
   const textToEmbed = `${data.full_name || ''} ${data.address_detail || ''} ${data.note || ''}`;
   const request = {
     id: `rr-${Date.now()}`,
@@ -358,19 +618,20 @@ app.post('/api/rescue-requests', (req, res) => {
   res.status(201).json(request);
 });
 
-app.put('/api/rescue-requests/:id', (req, res) => {
+app.put('/api/rescue-requests/:id', requireRoles([...ADMIN_ROLES, ...RESCUE_ROLES]), (req, res) => {
   const { id } = req.params;
   const idx = db.rescueRequests.findIndex(r => r.id === id);
   if (idx === -1) return res.status(404).json({ error: 'Request not found' });
 
-  db.rescueRequests[idx] = { ...db.rescueRequests[idx], ...req.body };
+  db.rescueRequests[idx] = { ...db.rescueRequests[idx], ...pickAllowed(req.body, RESCUE_REQUEST_UPDATE_FIELDS) };
   saveDb();
   res.json(db.rescueRequests[idx]);
 });
 
-app.post('/api/rescue-requests/:id/assign', (req, res) => {
+app.post('/api/rescue-requests/:id/assign', requireRoles(ADMIN_ROLES), (req, res) => {
   const { id } = req.params;
-  const { teamId, teamName, currentUser } = req.body;
+  const { teamId, teamName } = pickAllowed(req.body, ['teamId', 'teamName']);
+  const currentUser = req.user;
   
   const reqIdx = db.rescueRequests.findIndex(r => r.id === id);
   if (reqIdx === -1) return res.status(404).json({ error: 'Request not found' });
@@ -449,9 +710,10 @@ app.post('/api/rescue-requests/:id/assign', (req, res) => {
 });
 
 // 6. UPDATE MISSION STATUS (and link request status)
-app.post('/api/missions/:id/status', (req, res) => {
+app.post('/api/missions/:id/status', requireRoles([...ADMIN_ROLES, ...RESCUE_ROLES]), (req, res) => {
   const { id } = req.params;
-  const { newStatus, extraData, changedByType, changedByUser, note } = req.body;
+  const { newStatus, extraData, changedByType, note } = pickAllowed(req.body, ['newStatus', 'extraData', 'changedByType', 'note']);
+  const changedByUser = req.user;
 
   const missionIdx = db.rescueMissions.findIndex(m => m.id === id);
   if (missionIdx === -1) return res.status(404).json({ error: 'Mission not found' });
@@ -460,7 +722,7 @@ app.post('/api/missions/:id/status', (req, res) => {
   const oldStatus = mission.status;
 
   // Update mission
-  db.rescueMissions[missionIdx] = { ...mission, status: newStatus, ...extraData };
+  db.rescueMissions[missionIdx] = { ...mission, status: newStatus, ...sanitizeObject(extraData) };
 
   // Log status change
   const logEntry = {
@@ -489,10 +751,10 @@ app.post('/api/missions/:id/status', (req, res) => {
 });
 
 // 7. RESCUE TEAMS CRUD
-app.post('/api/teams', (req, res) => {
+app.post('/api/teams', requireRoles(ADMIN_ROLES), (req, res) => {
   const team = {
     id: `team-${Date.now()}`,
-    ...req.body,
+    ...pickAllowed(req.body, TEAM_FIELDS),
     created_at: new Date().toISOString()
   };
   db.rescueTeams.push(team);
@@ -500,17 +762,17 @@ app.post('/api/teams', (req, res) => {
   res.status(201).json(team);
 });
 
-app.put('/api/teams/:id', (req, res) => {
+app.put('/api/teams/:id', requireRoles(ADMIN_ROLES), (req, res) => {
   const { id } = req.params;
   const idx = db.rescueTeams.findIndex(t => t.id === id);
   if (idx === -1) return res.status(404).json({ error: 'Team not found' });
 
-  db.rescueTeams[idx] = { ...db.rescueTeams[idx], ...req.body };
+  db.rescueTeams[idx] = { ...db.rescueTeams[idx], ...pickAllowed(req.body, TEAM_FIELDS) };
   saveDb();
   res.json(db.rescueTeams[idx]);
 });
 
-app.delete('/api/teams/:id', (req, res) => {
+app.delete('/api/teams/:id', requireRoles(ADMIN_ROLES), (req, res) => {
   const { id } = req.params;
   db.rescueTeams = db.rescueTeams.filter(t => t.id !== id);
   saveDb();
@@ -518,8 +780,8 @@ app.delete('/api/teams/:id', (req, res) => {
 });
 
 // 8. SAFE ZONES CRUD
-app.post('/api/safe-zones', (req, res) => {
-  const data = req.body;
+app.post('/api/safe-zones', requireRoles(ADMIN_ROLES), (req, res) => {
+  const data = pickAllowed(req.body, SAFE_ZONE_FIELDS);
   const textToEmbed = `${data.name || ''} ${data.address || ''} ${data.notes || ''}`;
   const sz = {
     id: `sz-${Date.now()}`,
@@ -532,12 +794,12 @@ app.post('/api/safe-zones', (req, res) => {
   res.status(201).json(sz);
 });
 
-app.put('/api/safe-zones/:id', (req, res) => {
+app.put('/api/safe-zones/:id', requireRoles(ADMIN_ROLES), (req, res) => {
   const { id } = req.params;
   const idx = db.safeZones.findIndex(s => s.id === id);
   if (idx === -1) return res.status(404).json({ error: 'Safe zone not found' });
 
-  const updated = { ...db.safeZones[idx], ...req.body };
+  const updated = { ...db.safeZones[idx], ...pickAllowed(req.body, SAFE_ZONE_FIELDS) };
   const textToEmbed = `${updated.name || ''} ${updated.address || ''} ${updated.notes || ''}`;
   updated.vector_embedding = getEmbedding(textToEmbed);
 
@@ -546,7 +808,7 @@ app.put('/api/safe-zones/:id', (req, res) => {
   res.json(updated);
 });
 
-app.delete('/api/safe-zones/:id', (req, res) => {
+app.delete('/api/safe-zones/:id', requireRoles(ADMIN_ROLES), (req, res) => {
   const { id } = req.params;
   db.safeZones = db.safeZones.filter(s => s.id !== id);
   saveDb();
@@ -554,10 +816,10 @@ app.delete('/api/safe-zones/:id', (req, res) => {
 });
 
 // 9. RESCUE ROUTES CRUD
-app.post('/api/routes', (req, res) => {
+app.post('/api/routes', requireRoles(ADMIN_ROLES), (req, res) => {
   const route = {
     id: `route-${Date.now()}`,
-    ...req.body,
+    ...pickAllowed(req.body, ROUTE_FIELDS),
     created_at: new Date().toISOString()
   };
   db.rescueRoutes.push(route);
@@ -565,17 +827,17 @@ app.post('/api/routes', (req, res) => {
   res.status(201).json(route);
 });
 
-app.put('/api/routes/:id', (req, res) => {
+app.put('/api/routes/:id', requireRoles(ADMIN_ROLES), (req, res) => {
   const { id } = req.params;
   const idx = db.rescueRoutes.findIndex(r => r.id === id);
   if (idx === -1) return res.status(404).json({ error: 'Route not found' });
 
-  db.rescueRoutes[idx] = { ...db.rescueRoutes[idx], ...req.body };
+  db.rescueRoutes[idx] = { ...db.rescueRoutes[idx], ...pickAllowed(req.body, ROUTE_FIELDS) };
   saveDb();
   res.json(db.rescueRoutes[idx]);
 });
 
-app.delete('/api/routes/:id', (req, res) => {
+app.delete('/api/routes/:id', requireRoles(ADMIN_ROLES), (req, res) => {
   const { id } = req.params;
   db.rescueRoutes = db.rescueRoutes.filter(r => r.id !== id);
   saveDb();
@@ -583,10 +845,10 @@ app.delete('/api/routes/:id', (req, res) => {
 });
 
 // 10. ACTIVITY LOGS, DAMAGE REPORTS, SMS LOGS & VULNERABLE HOUSEHOLDS
-app.post('/api/damage-reports', (req, res) => {
+app.post('/api/damage-reports', requireRoles(ADMIN_ROLES), (req, res) => {
   const dr = {
     id: `dr-${Date.now()}`,
-    ...req.body,
+    ...pickAllowed(req.body, DAMAGE_REPORT_FIELDS),
     status: 'PENDING',
     created_at: new Date().toISOString()
   };
@@ -595,10 +857,10 @@ app.post('/api/damage-reports', (req, res) => {
   res.status(201).json(dr);
 });
 
-app.post('/api/vulnerable-households', (req, res) => {
+app.post('/api/vulnerable-households', requireRoles(ADMIN_ROLES), (req, res) => {
   const vh = {
     id: `vh-${Date.now()}`,
-    ...req.body,
+    ...pickAllowed(req.body, VULNERABLE_HOUSEHOLD_FIELDS),
     created_at: new Date().toISOString()
   };
   db.vulnerableHouseholds.push(vh);
@@ -606,20 +868,20 @@ app.post('/api/vulnerable-households', (req, res) => {
   res.status(201).json(vh);
 });
 
-app.put('/api/vulnerable-households/:id', (req, res) => {
+app.put('/api/vulnerable-households/:id', requireRoles(ADMIN_ROLES), (req, res) => {
   const { id } = req.params;
   const idx = db.vulnerableHouseholds.findIndex(v => v.id === id);
   if (idx === -1) return res.status(404).json({ error: 'Vulnerable household not found' });
 
-  db.vulnerableHouseholds[idx] = { ...db.vulnerableHouseholds[idx], ...req.body };
+  db.vulnerableHouseholds[idx] = { ...db.vulnerableHouseholds[idx], ...pickAllowed(req.body, VULNERABLE_HOUSEHOLD_FIELDS) };
   saveDb();
   res.json(db.vulnerableHouseholds[idx]);
 });
 
-app.post('/api/sms-logs', (req, res) => {
+app.post('/api/sms-logs', requireRoles(ADMIN_ROLES), (req, res) => {
   const log = {
     id: `sms-${Date.now()}`,
-    ...req.body,
+    ...pickAllowed(req.body, SMS_LOG_FIELDS),
     sent_at: new Date().toISOString()
   };
   db.smsLogs.unshift(log);
@@ -627,10 +889,14 @@ app.post('/api/sms-logs', (req, res) => {
   res.status(201).json(log);
 });
 
-app.put('/api/notifications/:id/read', (req, res) => {
+app.put('/api/notifications/:id/read', requireAuth, (req, res) => {
   const { id } = req.params;
   const idx = db.notifications.findIndex(n => n.id === id);
   if (idx !== -1) {
+    const notification = db.notifications[idx];
+    if (notification.user_id && notification.user_id !== req.user.id && !ADMIN_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Permission denied' });
+    }
     db.notifications[idx].is_read = true;
     saveDb();
   }

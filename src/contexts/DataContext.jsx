@@ -8,6 +8,7 @@ import {
 } from '../data/mockData';
 
 const DataContext = createContext(null);
+const shouldUseOfflineFallback = (err) => !err.response;
 
 export function DataProvider({ children }) {
   const [areas, setAreas] = useState(AREAS);
@@ -91,6 +92,7 @@ export function DataProvider({ children }) {
       await axios.put(`/api/notifications/${notifId}/read`);
       setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, is_read: true } : n));
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, is_read: true } : n));
     }
   }, []);
@@ -114,6 +116,7 @@ export function DataProvider({ children }) {
       setFloodWarnings(prev => [w, ...prev]);
       return w;
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       const w = { id: `fw-${Date.now()}`, ...data, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), sms_sent: false, sms_count: 0 };
       setFloodWarnings(prev => [w, ...prev]);
       return w;
@@ -126,6 +129,7 @@ export function DataProvider({ children }) {
       const w = res.data;
       setFloodWarnings(prev => prev.map(item => item.id === id ? w : item));
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       setFloodWarnings(prev => prev.map(w => w.id === id ? { ...w, ...data, updated_at: new Date().toISOString() } : w));
     }
   }, []);
@@ -135,6 +139,7 @@ export function DataProvider({ children }) {
       await axios.delete(`/api/warnings/${id}`);
       setFloodWarnings(prev => prev.filter(w => w.id !== id));
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       setFloodWarnings(prev => prev.filter(w => w.id !== id));
     }
   }, []);
@@ -147,6 +152,7 @@ export function DataProvider({ children }) {
       setRescueRequests(prev => [rr, ...prev]);
       return rr;
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       const rr = {
         id: `rr-${Date.now()}`,
         ...data,
@@ -168,6 +174,7 @@ export function DataProvider({ children }) {
       const rr = res.data;
       setRescueRequests(prev => prev.map(r => r.id === id ? rr : r));
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       setRescueRequests(prev => prev.map(r => r.id === id ? { ...r, ...data } : r));
     }
   }, []);
@@ -184,6 +191,7 @@ export function DataProvider({ children }) {
       setActivityLogs(dbRes.data.activityLogs || []);
       setNotifications(dbRes.data.notifications || []);
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       setRescueRequests(prev => prev.map(r => r.id === requestId
         ? { ...r, assigned_team_id: teamId, assigned_team_name: teamName, status: 'ASSIGNED', accepted_at: new Date().toISOString() }
         : r
@@ -244,6 +252,7 @@ export function DataProvider({ children }) {
       if (dbRes.data.rescueRequests) setRescueRequests(dbRes.data.rescueRequests);
       if (dbRes.data.missionStatusLogs) setMissionStatusLogs(dbRes.data.missionStatusLogs);
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       setRescueMissions(prev => prev.map(m => {
         if (m.id !== missionId) return m;
         const oldStatus = m.status;
@@ -303,6 +312,7 @@ export function DataProvider({ children }) {
       setRescueTeams(prev => [...prev, team]);
       return team;
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       const team = { id: `team-${Date.now()}`, ...data, created_at: new Date().toISOString() };
       setRescueTeams(prev => [...prev, team]);
       return team;
@@ -315,6 +325,7 @@ export function DataProvider({ children }) {
       const team = res.data;
       setRescueTeams(prev => prev.map(t => t.id === id ? team : t));
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       setRescueTeams(prev => prev.map(t => t.id === id ? { ...t, ...data } : t));
     }
   }, []);
@@ -324,6 +335,7 @@ export function DataProvider({ children }) {
       await axios.delete(`/api/teams/${id}`);
       setRescueTeams(prev => prev.filter(t => t.id !== id));
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       setRescueTeams(prev => prev.filter(t => t.id !== id));
     }
   }, []);
@@ -336,6 +348,7 @@ export function DataProvider({ children }) {
       setSafeZones(prev => [...prev, sz]);
       return sz;
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       const sz = { id: `sz-${Date.now()}`, ...data, created_at: new Date().toISOString() };
       setSafeZones(prev => [...prev, sz]);
       return sz;
@@ -348,6 +361,7 @@ export function DataProvider({ children }) {
       const sz = res.data;
       setSafeZones(prev => prev.map(s => s.id === id ? sz : s));
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       setSafeZones(prev => prev.map(s => s.id === id ? { ...s, ...data } : s));
     }
   }, []);
@@ -357,6 +371,7 @@ export function DataProvider({ children }) {
       await axios.delete(`/api/safe-zones/${id}`);
       setSafeZones(prev => prev.filter(s => s.id !== id));
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       setSafeZones(prev => prev.filter(s => s.id !== id));
     }
   }, []);
@@ -369,6 +384,7 @@ export function DataProvider({ children }) {
       setRescueRoutes(prev => [...prev, r]);
       return r;
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       const r = { id: `route-${Date.now()}`, ...data, created_at: new Date().toISOString() };
       setRescueRoutes(prev => [...prev, r]);
       return r;
@@ -381,6 +397,7 @@ export function DataProvider({ children }) {
       const r = res.data;
       setRescueRoutes(prev => prev.map(item => item.id === id ? r : item));
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       setRescueRoutes(prev => prev.map(r => r.id === id ? { ...r, ...data } : r));
     }
   }, []);
@@ -390,6 +407,7 @@ export function DataProvider({ children }) {
       await axios.delete(`/api/routes/${id}`);
       setRescueRoutes(prev => prev.filter(r => r.id !== id));
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       setRescueRoutes(prev => prev.filter(r => r.id !== id));
     }
   }, []);
@@ -402,6 +420,7 @@ export function DataProvider({ children }) {
       setSmsLogs(prev => [log, ...prev]);
       return log;
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       const log = { id: `sms-${Date.now()}`, ...data, sent_at: new Date().toISOString() };
       setSmsLogs(prev => [log, ...prev]);
       return log;
@@ -416,6 +435,7 @@ export function DataProvider({ children }) {
       setDamageReports(prev => [dr, ...prev]);
       return dr;
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       const dr = { id: `dr-${Date.now()}`, ...data, status: 'PENDING', created_at: new Date().toISOString() };
       setDamageReports(prev => [dr, ...prev]);
       return dr;
@@ -430,6 +450,7 @@ export function DataProvider({ children }) {
       setVulnerableHouseholds(prev => [...prev, vh]);
       return vh;
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       const vh = { id: `vh-${Date.now()}`, ...data, created_at: new Date().toISOString() };
       setVulnerableHouseholds(prev => [...prev, vh]);
       return vh;
@@ -442,6 +463,7 @@ export function DataProvider({ children }) {
       const vh = res.data;
       setVulnerableHouseholds(prev => prev.map(v => v.id === id ? vh : v));
     } catch (err) {
+      if (!shouldUseOfflineFallback(err)) throw err;
       setVulnerableHouseholds(prev => prev.map(v => v.id === id ? { ...v, ...data } : v));
     }
   }, []);

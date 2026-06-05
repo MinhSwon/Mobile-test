@@ -29,6 +29,11 @@ function getApiBaseURL() {
 axios.defaults.baseURL = getApiBaseURL();
 axios.defaults.timeout = 15000;
 
+const savedToken = localStorage.getItem('authToken');
+if (savedToken) {
+  axios.defaults.headers.common.Authorization = `Bearer ${savedToken}`;
+}
+
 axios.interceptors.response.use(
   response => response,
   async error => {
@@ -40,6 +45,13 @@ axios.interceptors.response.use(
       config.__renderFallbackRetried = true;
       config.baseURL = PRODUCTION_API_ORIGIN;
       return axios(config);
+    }
+
+    if (error.response?.status === 401) {
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('currentUser');
+      localStorage.removeItem('currentProfile');
+      delete axios.defaults.headers.common.Authorization;
     }
 
     return Promise.reject(error);
