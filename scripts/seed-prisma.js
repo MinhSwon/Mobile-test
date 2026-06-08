@@ -114,7 +114,7 @@ async function main() {
       code: PROJECT_CODE,
       name: 'Ứng dụng cứu hộ Việt Nam',
       type: 'MOBILE_APP',
-      description: 'Cơ sở dữ liệu độc lập cho app cứu hộ toàn quốc, tách khỏi web Hà Tĩnh.',
+      description: 'Cơ sở dữ liệu độc lập cho app cứu hộ toàn quốc, tách khỏi hệ thống web cũ.',
     },
   });
 

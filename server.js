@@ -39,8 +39,6 @@ const allowedOrigins = (process.env.CLIENT_ORIGINS || '')
   .map(origin => origin.trim())
   .filter(Boolean);
 const defaultAllowedOrigins = [
-  'https://cuuhohatinh.onrender.com',
-  'https://cuuhohatinh.sonminh2709.workers.dev',
   'capacitor://localhost',
   'ionic://localhost',
   'http://localhost',

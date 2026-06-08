@@ -2,7 +2,7 @@ import 'dotenv/config';
 import pg from 'pg';
 
 const { Client } = pg;
-const SAFE_DATABASE_NAME = 'flood_rescue';
+const SAFE_DATABASE_NAME = 'rescuevn_app';
 
 function quoteIdentifier(value) {
   return `"${value.replaceAll('"', '""')}"`;
@@ -49,4 +49,3 @@ main().catch((error) => {
   console.error(error.message);
   process.exit(1);
 });
-

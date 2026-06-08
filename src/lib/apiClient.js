@@ -1,19 +1,22 @@
 import axios from 'axios';
 
-const PRODUCTION_API_ORIGIN = 'https://cuuhohatinh.onrender.com';
+const CONFIGURED_API_ORIGIN = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+const nativeProtocols = new Set(['capacitor:', 'ionic:']);
 
 function getApiBaseURL() {
-  if (import.meta.env.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL;
+  if (CONFIGURED_API_ORIGIN) {
+    return CONFIGURED_API_ORIGIN;
   }
 
-  // Use local proxy during Vite development
   if (import.meta.env.DEV) {
     return '';
   }
 
-  // Default to production API for built apps (mobile/web)
-  return PRODUCTION_API_ORIGIN;
+  if (nativeProtocols.has(window.location.protocol)) {
+    console.error('Missing VITE_API_BASE_URL for native mobile build.');
+  }
+
+  return '';
 }
 
 axios.defaults.baseURL = getApiBaseURL();
@@ -27,16 +30,6 @@ if (savedToken) {
 axios.interceptors.response.use(
   response => response,
   async error => {
-    const config = error.config;
-    const isApiRequest = typeof config?.url === 'string' && config.url.startsWith('/api/');
-    const canRetry = isApiRequest && !error.response && !config.__renderFallbackRetried;
-
-    if (canRetry) {
-      config.__renderFallbackRetried = true;
-      config.baseURL = PRODUCTION_API_ORIGIN;
-      return axios(config);
-    }
-
     if (error.response?.status === 401) {
       localStorage.removeItem('authToken');
       localStorage.removeItem('currentUser');
@@ -48,4 +41,4 @@ axios.interceptors.response.use(
   }
 );
 
-export { PRODUCTION_API_ORIGIN };
+export const API_ORIGIN = CONFIGURED_API_ORIGIN;

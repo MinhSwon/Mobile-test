@@ -2,7 +2,7 @@
 
 ## Mục tiêu
 
-Database mới được thiết kế cho app cứu hộ hoạt động độc lập, không dùng chung mô hình dữ liệu cũ của web Hà Tĩnh. Schema vẫn chuẩn bị sẵn để sau này mở thêm web toàn quốc hoặc portal tỉnh/thành mà không phải tách database lại từ đầu.
+Database mới được thiết kế cho app cứu hộ hoạt động độc lập, không dùng chung mô hình dữ liệu cũ của bất kỳ web địa phương nào. Schema vẫn chuẩn bị sẵn để sau này mở thêm web toàn quốc hoặc portal tỉnh/thành mà không phải tách database lại từ đầu.
 
 ## Nguyên tắc chính
 

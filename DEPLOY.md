@@ -41,6 +41,7 @@ http://localhost:5000/api/health
 ```text
 PORT=5000
 CLIENT_ORIGINS=https://ten-mien-cua-ban.com,http://localhost,capacitor://localhost,ionic://localhost
+VITE_API_BASE_URL=https://ten-backend-render-cua-ban.onrender.com
 DATABASE_URL=postgresql://user:password@host:5432/rescuevn_app
 APP_PROJECT_CODE=RESCUEVN_APP
 PGSSL=true
@@ -55,6 +56,7 @@ Ghi chu:
 
 - `PORT` thuong duoc hosting tu gan, khong can dat tren Render.
 - `CLIENT_ORIGINS` co the bo trong neu frontend va API chay cung domain. Neu build Android Capacitor, them `http://localhost`, `capacitor://localhost`, va `ionic://localhost`.
+- `VITE_API_BASE_URL` la URL backend ma app Android goi. Khong hard-code domain cu trong source; dat bien nay tren Render hoac khi build APK.
 - Khi co `DATABASE_URL`, Prisma se ket noi PostgreSQL va quan ly cac bang quan he.
 - Tren Render nen luon cau hinh `DATABASE_URL`; `db.json` chi phu hop de chay local va khong duoc commit len Git.
 - `PGSSL=true` thuong can cho database tren hosting. Neu PostgreSQL chay local bang pgAdmin thi de `PGSSL=false`.
@@ -67,7 +69,7 @@ Ghi chu:
 2. Tao file `.env` tu `.env.example`, sua mat khau PostgreSQL:
 
 ```text
-DATABASE_URL=postgresql://postgres:mat_khau_cua_ban@localhost:5432/flood_rescue
+DATABASE_URL=postgresql://postgres:mat_khau_cua_ban@localhost:5432/rescuevn_app
 PGSSL=false
 ```
 
@@ -79,9 +81,9 @@ npm run db:setup
 
 Lenh nay se:
 
-- Tao database `flood_rescue` neu chua co.
+- Tao database `rescuevn_app` neu chua co.
 - Doc `prisma/schema.prisma`.
-- Tao migration SQL cho cac bang `users`, `rescue_teams`, `rescue_requests`, `flood_alerts`, `sms_logs`.
+- Tao migration SQL cho cac bang quan he nhu `app_projects`, `administrative_units`, `users`, `rescue_requests`, `alerts`, `rescue_missions`.
 - Chay migration vao PostgreSQL.
 - Sinh Prisma Client cho backend.
 - Seed du lieu mau vao cac bang Prisma.
@@ -93,7 +95,7 @@ npm run build
 npm start
 ```
 
-Trong pgAdmin, mo database `flood_rescue` de xem cac bang Prisma da tao.
+Trong pgAdmin, mo database `rescuevn_app` de xem cac bang Prisma da tao.
 
 ## Quy mo 30-50 nguoi
 

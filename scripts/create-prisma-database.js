@@ -21,7 +21,7 @@ async function main() {
 
   const { maintenanceUrl, databaseName } = getMaintenanceUrl(process.env.DATABASE_URL);
   if (!databaseName) {
-    throw new Error('DATABASE_URL must include a database name, for example /flood_rescue.');
+    throw new Error('DATABASE_URL must include a database name, for example /rescuevn_app.');
   }
 
   const client = new Client({
@@ -46,4 +46,3 @@ main().catch((error) => {
   console.error(error.message);
   process.exit(1);
 });
-
